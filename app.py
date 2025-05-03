@@ -35,7 +35,7 @@ if confirm and email:
     for key, text in questions.items():
         responses[key] = st.slider(f"{text} (0–2)", 0, 2, 2)
 
-    # Limiar e recomendação
+    # Cálculo de score e recomendação
     score = sum(responses.values())
     if score >= 8:
         recommendation = "Treino normal (100%)."
@@ -56,6 +56,7 @@ if confirm and email:
             "score": score,
             "recommendation": recommendation
         }
+
         # Envia para a aba do usuário (cria se não existir)
         try:
             ws = sh.worksheet(name)
@@ -63,9 +64,10 @@ if confirm and email:
             ws = sh.add_worksheet(title=name, rows="1000", cols="20")
             ws.append_row(list(record.keys()))
         ws.append_row(list(record.values()))
-        st.success("Dados enviados com sucesso!")
 
-    # Opção de gráfico de evolução
+        st.success("✅ Dados enviados com sucesso!")
+
+    # Gráfico de evolução
     if st.checkbox("Mostrar gráfico de evolução"):
         period = st.selectbox("Período (dias):", [7, 15, 30])
         rows = sh.worksheet(name).get_all_records()
@@ -74,7 +76,3 @@ if confirm and email:
         df = df.set_index("timestamp").last(f"{period}D")
         st.line_chart(df["score"])
 
- },
- "nbformat": 4,
- "nbformat_minor": 5
-}
