@@ -1,87 +1,79 @@
-{
- "cells": [
-  {
-   "cell_type": "code",
-   "execution_count": null,
-   "id": "fc60224d-854d-4630-920e-a1fb922468d8",
-   "metadata": {},
-   "outputs": [],
-   "source": [
-    "import streamlit as st\n",
-    "import pandas as pd\n",
-    "from datetime import datetime\n",
-    "import os\n",
-    "\n",
-    "# --- Sidebar: Configurações dos limiares e percentuais ---\n",
-    "st.sidebar.header(\"Configurações de Limiar e Ajuste\")\n",
-    "threshold_good = st.sidebar.slider(\"≥ Pontuação para treino normal\", 0, 10, 8)\n",
-    "threshold_moderate = st.sidebar.slider(\"≥ Pontuação para –15% de ajuste\", 0, 10, 6)\n",
-    "threshold_low = st.sidebar.slider(\"≥ Pontuação para –35% de ajuste\", 0, 10, 4)\n",
-    "reduction_moderate = st.sidebar.number_input(\"Redução de volume/intensidade (média) %\", min_value=0, max_value=100, value=15)\n",
-    "reduction_low = st.sidebar.number_input(\"Redução de volume/intensidade (baixa) %\", min_value=0, max_value=100, value=35)\n",
-    "\n",
-    "# --- Perguntas do questionário ---\n",
-    "st.title(\"Questionário Diário de Prontidão para Treino\")\n",
-    "st.write(\"Responda cada item de 0 a 2:\")\n",
-    "\n",
-    "questions = {\n",
-    "    \"Sono (0–2)\": \"Como foi seu sono na última noite?\",\n",
-    "    \"Dor Muscular (0–2)\": \"Qual seu nível de dor muscular/rigidez hoje?\",\n",
-    "    \"Fadiga (0–2)\": \"Qual seu nível de cansaço/fadiga hoje?\",\n",
-    "    \"Estresse (0–2)\": \"Como está seu nível de estresse hoje?\",\n",
-    "    \"Motivação (0–2)\": \"Qual sua motivação para treinar hoje?\"\n",
-    "}\n",
-    "\n",
-    "responses = {}\n",
-    "for key, label in questions.items():\n",
-    "    responses[key] = st.slider(label, 0, 2, 2)\n",
-    "\n",
-    "# --- Cálculo da pontuação e recomendação ---\n",
-    "score = sum(responses.values())\n",
-    "st.subheader(f\"Sua pontuação total: {score} / 10\")\n",
-    "\n",
-    "if score >= threshold_good:\n",
-    "    recommendation = \"Treino normal (100% do volume/intensidade).\"\n",
-    "elif score >= threshold_moderate:\n",
-    "    recommendation = f\"Reduzir ~{reduction_moderate}% do volume ou intensidade.\"\n",
-    "elif score >= threshold_low:\n",
-    "    recommendation = f\"Reduzir ~{reduction_low}% do volume ou intensidade.\"\n",
-    "else:\n",
-    "    recommendation = \"Repouso ou atividades regenerativas recomendadas.\"\n",
-    "\n",
-    "st.write(\"**Recomendação para hoje:**\", recommendation)\n",
-    "\n",
-    "# --- Registro histórico local em CSV (tratamento de encoding) ---\n",
-    "history_file = \"history_prontidao.csv\"\n",
-    "record = {\"data\": datetime.now().strftime(\"%Y-%m-%d %H:%M:%S\"), **responses, \"score\": score, \"recomendacao\": recommendation}\n",
-    "\n",
-    "# Ao ler, tenta utf-8 e faz fallback para latin1\n",
-    "if os.path.exists(history_file):\n",
-    "    try:\n",
-    "        df = pd.read_csv(history_file, encoding='utf-8')\n",
-    "    except UnicodeDecodeError:\n",
-    "        df = pd.read_csv(history_file, encoding='latin1')\n",
-    "    df = df.append(record, ignore_index=True)\n",
-    "else:\n",
-    "    df = pd.DataFrame([record])\n",
-    "\n",
-    "# Ao salvar, força utf-8\n",
-    "df.to_csv(history_file, index=False, encoding='utf-8')\n",
-    "\n",
-    "# --- Exibição do histórico ---\n",
-    "st.subheader(\"Histórico de Respostas\")\n",
-    "st.dataframe(df.sort_values(\"data\", ascending=False))\n"
-   ]
-  }
- ],
- "metadata": {
-  "kernelspec": {
-   "display_name": "",
-   "name": ""
-  },
-  "language_info": {
-   "name": ""
-  }
+import streamlit as st
+import pandas as pd
+import json
+import gspread
+from oauth2client.service_account import ServiceAccountCredentials
+
+# --- Autenticação via Streamlit Secrets ---
+secret_json = st.secrets["gcp_service_account"]["credentials"]
+creds_dict = json.loads(secret_json)
+
+SCOPE = ["https://www.googleapis.com/auth/spreadsheets"]
+creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, SCOPE)
+gc = gspread.authorize(creds)
+
+SPREADSHEET_ID = "1iPouPzef7W-kw-2EIsDMq7K6g9A70dz-lwp2A0GU2lU"
+sh = gc.open_by_key(SPREADSHEET_ID)
+
+st.title("Questionário Diário de Prontidão para Treino")
+
+# Captura nome e confirmação
+name = st.text_input("Nome completo:")
+confirm = st.checkbox(f"Confirmo que meu nome está correto: {name}")
+email = st.text_input("E-mail:")
+
+if confirm and email:
+    st.write("### Responda cada item de 0 a 2 pontos:")
+    questions = {
+        "Sono": "Como foi seu sono na última noite?",
+        "Dor Muscular": "Qual seu nível de dor muscular/rigidez hoje?",
+        "Fadiga": "Qual seu nível de cansaço/fadiga hoje?",
+        "Estresse": "Como está seu nível de estresse hoje?",
+        "Motivação": "Qual sua motivação para treinar hoje?"
+    }
+    responses = {}
+    for key, text in questions.items():
+        responses[key] = st.slider(f"{text} (0–2)", 0, 2, 2)
+
+    # Limiar e recomendação
+    score = sum(responses.values())
+    if score >= 8:
+        recommendation = "Treino normal (100%)."
+    elif score >= 6:
+        recommendation = "Reduzir ~15% do volume/intensidade."
+    elif score >= 4:
+        recommendation = "Reduzir ~35% do volume/intensidade."
+    else:
+        recommendation = "Repouso recomendável."
+
+    if st.button("Enviar respostas"):
+        # Monta o registro
+        record = {
+            "timestamp": pd.Timestamp.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "name": name,
+            "email": email,
+            **responses,
+            "score": score,
+            "recommendation": recommendation
+        }
+        # Envia para a aba do usuário (cria se não existir)
+        try:
+            ws = sh.worksheet(name)
+        except gspread.WorksheetNotFound:
+            ws = sh.add_worksheet(title=name, rows="1000", cols="20")
+            ws.append_row(list(record.keys()))
+        ws.append_row(list(record.values()))
+        st.success("Dados enviados com sucesso!")
+
+    # Opção de gráfico de evolução
+    if st.checkbox("Mostrar gráfico de evolução"):
+        period = st.selectbox("Período (dias):", [7, 15, 30])
+        rows = sh.worksheet(name).get_all_records()
+        df = pd.DataFrame(rows)
+        df["timestamp"] = pd.to_datetime(df["timestamp"])
+        df = df.set_index("timestamp").last(f"{period}D")
+        st.line_chart(df["score"])
+
  },
  "nbformat": 4,
  "nbformat_minor": 5
